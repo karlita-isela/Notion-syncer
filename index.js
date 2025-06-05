@@ -105,6 +105,22 @@ app.get("/sync", async (req, res) => {
         for (const assignment of assignments) {
           console.log(`      📝 ${assignment.name}`);
 
+          // Check if assignment already exists
+          const existingAssignment = await notion.databases.query({
+            database_id: NOTION_DB_ID,
+            filter: {
+              property: "Name",
+              title: {
+                equals: assignment.name,
+              },
+            },
+          });
+
+          if (existingAssignment.results.length > 0) {
+            console.log(`         ⏭️ Assignment "${assignment.name}" already exists, skipping`);
+            continue;
+          }
+
           const coursePageId = await findCoursePageId(course.name);
           if (!coursePageId) {
             console.log(`         ⚠️ No matching Notion course page for "${course.name}"`);
