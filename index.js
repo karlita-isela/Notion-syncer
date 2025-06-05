@@ -1,6 +1,6 @@
 const express = require("express");
 const { Client } = require("@notionhq/client");
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 require("dotenv").config();
 
 const app = express();
@@ -9,7 +9,6 @@ const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 const NOTION_DB_ID = process.env.NOTION_DB_ID;
 const COURSE_PLANNER_DB = process.env.COURSE_PLANNER_DB;
 
-// Canvas accounts to sync
 const canvasConfigs = [
   {
     token: process.env.CANVAS_1_API_TOKEN,
@@ -38,7 +37,7 @@ async function findCoursePageId(canvasCourseName) {
   return res.results.length ? res.results[0].id : null;
 }
 
-// 🎯 Type detector
+// 🎯 Assignment Type detector
 function detectTypeFromName(name) {
   const lowered = name.toLowerCase();
   if (lowered.includes("quiz")) return "Quiz";
@@ -54,65 +53,54 @@ function detectTypeFromName(name) {
   return "Worksheet";
 }
 
-// 🧠 Module detector
+// 📦 Module detector
 function detectModule(name) {
   const match = name.match(/(M|Module|Ch|Chapter)\s?-?\s?(\d+)/i);
   return match ? `Module ${match[2]}` : "Uncategorized";
 }
 
-// 🔍 Debug route: fetch Canvas courses
-app.get("/courses", async (req, res) => {
-  const allCourses = [];
+// 🧠 Submission Status helper
+function detectSubmissionStatus(assignment) {
+  if (assignment.submission && assignment.submission.submitted_at) {
+    const submittedAt = new Date(assignment.submission.submitted_at);
+    const dueAt = assignment.due_at ? new Date(assignment.due_at) : null;
 
-  for (const config of canvasConfigs) {
-    try {
-      const response = await fetch(`${config.baseUrl}/api/v1/courses`, {
-        headers: {
-          Authorization: `Bearer ${config.token}`,
-        },
-      });
-      const courses = await response.json();
-      allCourses.push({
-        label: config.label,
-        courses,
-      });
-    } catch (error) {
-      allCourses.push({
-        label: config.label,
-        error: error.message,
-      });
+    if (dueAt && submittedAt > dueAt) {
+      return "⏰ Delayed AF";
+    } else {
+      return "✨ Dominated";
     }
+  } else if (assignment.due_at && new Date() > new Date(assignment.due_at)) {
+    return "💀 Never Gave";
+  } else {
+    return "🧠 Manifesting Productivity";
   }
+}
 
-  res.json(allCourses);
-});
-
-// 🔁 SYNC route
+// 🛠 SYNC route
 app.get("/sync", async (req, res) => {
   let totalCreated = 0;
 
   for (const config of canvasConfigs) {
     console.log(`🔍 Syncing from ${config.label}...`);
-
     try {
       const coursesRes = await fetch(`${config.baseUrl}/api/v1/courses`, {
         headers: { Authorization: `Bearer ${config.token}` },
       });
+
       const courses = await coursesRes.json();
+      console.log(`   ➤ Got ${courses.length} courses`);
 
       for (const course of courses) {
         if (!course.name || !course.id) continue;
-        console.log(`📘 Course: ${course.name} (ID: ${course.id})`);
+        console.log(`📘 Course: ${course.name} (${course.id})`);
 
-        const assignmentsRes = await fetch(
-          `${config.baseUrl}/api/v1/courses/${course.id}/assignments`,
-          {
-            headers: { Authorization: `Bearer ${config.token}` },
-          }
-        );
+        const assignmentsRes = await fetch(`${config.baseUrl}/api/v1/courses/${course.id}/assignments`, {
+          headers: { Authorization: `Bearer ${config.token}` },
+        });
+
         const assignments = await assignmentsRes.json();
-
-        console.log(`   ➤ Found ${assignments.length} assignments`);
+        console.log(`   ➤ Found ${assignments.length} assignments for ${course.name}`);
 
         for (const assignment of assignments) {
           console.log(`      📝 ${assignment.name}`);
@@ -140,8 +128,8 @@ app.get("/sync", async (req, res) => {
                     { text: { content: detectModule(assignment.name) } },
                   ],
                 },
-                Status: {
-                  select: { name: assignment.workflow_state || "unknown" },
+                "Submission Status": {
+                  select: { name: detectSubmissionStatus(assignment) },
                 },
                 ...(coursePageId && {
                   Course: {
@@ -168,10 +156,10 @@ app.get("/sync", async (req, res) => {
 
 // 🔓 Welcome route
 app.get("/", (req, res) => {
-  res.send("👋 Welcome to your Notion Class Importer (Replit edition)!");
+  res.send("👋 Welcome to your Notion Class Importer!");
 });
 
-// 📚 GET list of Canvas courses
+// 📚 Course route
 app.get("/courses", async (req, res) => {
   const courseList = [];
 
@@ -197,7 +185,7 @@ app.get("/courses", async (req, res) => {
   res.json(courseList);
 });
 
-// 🧠 Server start
+// 🚀 Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
