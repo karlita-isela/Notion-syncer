@@ -156,6 +156,32 @@ app.get("/", (req, res) => {
   res.send("👋 Welcome to your Notion Class Importer (Replit edition)!");
 });
 
+// 📚 GET list of Canvas courses
+app.get("/courses", async (req, res) => {
+  const courseList = [];
+
+  for (const config of canvasConfigs) {
+    try {
+      const coursesRes = await fetch(`${config.baseUrl}/api/v1/courses`, {
+        headers: { Authorization: `Bearer ${config.token}` },
+      });
+      const courses = await coursesRes.json();
+
+      for (const course of courses) {
+        courseList.push({
+          id: course.id,
+          name: course.name,
+          label: config.label,
+        });
+      }
+    } catch (err) {
+      console.error(`❌ Error fetching courses for ${config.label}:`, err.message);
+    }
+  }
+
+  res.json(courseList);
+});
+
 // 🧠 Server start
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
