@@ -92,6 +92,8 @@ app.get("/sync", async (req, res) => {
   let totalCreated = 0;
 
   for (const config of canvasConfigs) {
+    console.log(`🔍 Syncing from ${config.label}...`);
+
     try {
       const coursesRes = await fetch(`${config.baseUrl}/api/v1/courses`, {
         headers: { Authorization: `Bearer ${config.token}` },
@@ -99,7 +101,8 @@ app.get("/sync", async (req, res) => {
       const courses = await coursesRes.json();
 
       for (const course of courses) {
-        const courseName = course.name;
+        if (!course.name || !course.id) continue;
+        console.log(`📘 Course: ${course.name} (ID: ${course.id})`);
 
         const assignmentsRes = await fetch(
           `${config.baseUrl}/api/v1/courses/${course.id}/assignments`,
@@ -109,38 +112,50 @@ app.get("/sync", async (req, res) => {
         );
         const assignments = await assignmentsRes.json();
 
+        console.log(`   ➤ Found ${assignments.length} assignments`);
+
         for (const assignment of assignments) {
-          const coursePageId = await findCoursePageId(courseName);
+          console.log(`      📝 ${assignment.name}`);
 
-          await notion.pages.create({
-            parent: { database_id: NOTION_DB_ID },
-            properties: {
-              Name: {
-                title: [{ text: { content: assignment.name } }],
-              },
-              Due: assignment.due_at
-                ? { date: { start: assignment.due_at } }
-                : undefined,
-              Type: {
-                select: { name: detectTypeFromName(assignment.name) },
-              },
-              "Chapter/Module": {
-                rich_text: [
-                  { text: { content: detectModule(assignment.name) } },
-                ],
-              },
-              Status: {
-                select: { name: assignment.workflow_state || "unknown" },
-              },
-              ...(coursePageId && {
-                Course: {
-                  relation: [{ id: coursePageId }],
+          const coursePageId = await findCoursePageId(course.name);
+          if (!coursePageId) {
+            console.log(`         ⚠️ No matching Notion course page for "${course.name}"`);
+          }
+
+          try {
+            await notion.pages.create({
+              parent: { database_id: NOTION_DB_ID },
+              properties: {
+                Name: {
+                  title: [{ text: { content: assignment.name } }],
                 },
-              }),
-            },
-          });
+                Due: assignment.due_at
+                  ? { date: { start: assignment.due_at } }
+                  : undefined,
+                Type: {
+                  select: { name: detectTypeFromName(assignment.name) },
+                },
+                "Chapter/Module": {
+                  rich_text: [
+                    { text: { content: detectModule(assignment.name) } },
+                  ],
+                },
+                Status: {
+                  select: { name: assignment.workflow_state || "unknown" },
+                },
+                ...(coursePageId && {
+                  Course: {
+                    relation: [{ id: coursePageId }],
+                  },
+                }),
+              },
+            });
 
-          totalCreated++;
+            totalCreated++;
+            console.log(`         ✅ Synced "${assignment.name}"`);
+          } catch (createErr) {
+            console.error(`         ❌ Failed to create Notion page: ${createErr.message}`);
+          }
         }
       }
     } catch (err) {
