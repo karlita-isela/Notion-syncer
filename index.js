@@ -60,6 +60,33 @@ function detectModule(name) {
   return match ? `Module ${match[2]}` : "Uncategorized";
 }
 
+// 🔍 Debug route: fetch Canvas courses
+app.get("/courses", async (req, res) => {
+  const allCourses = [];
+
+  for (const config of canvasConfigs) {
+    try {
+      const response = await fetch(`${config.baseUrl}/api/v1/courses`, {
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+        },
+      });
+      const courses = await response.json();
+      allCourses.push({
+        label: config.label,
+        courses,
+      });
+    } catch (error) {
+      allCourses.push({
+        label: config.label,
+        error: error.message,
+      });
+    }
+  }
+
+  res.json(allCourses);
+});
+
 // 🔁 SYNC route
 app.get("/sync", async (req, res) => {
   let totalCreated = 0;
