@@ -190,165 +190,316 @@ async function fetchAndParseModuleItemContent(course, item, token) {
   }
 }
 
-// 🛠 SYNC route - sync assignments + module content from Canvas to Notion with pagination and scraping
-app.get("/sync", async (req, res) => {
-  console.log("SYNC ROUTE HIT");
+  // At the top, add this to load your new secret from environment variables:
+  const MODULE_CONTENT_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-  let totalCreated = 0;
+  // --- Updated Sync Route ---
+  app.get("/sync", async (req, res) => {
+    console.log("SYNC ROUTE HIT");
 
-  for (const config of canvasConfigs) {
-    console.log(`🔍 Syncing from ${config.label}...`);
-    try {
-      // Fetch all courses (all pages)
-      const courses = await fetchAllPages(`${config.baseUrl}/api/v1/courses`, config.token);
-      console.log(`   ➤ Got ${courses.length} courses`);
+    let totalCreated = 0;
+    let totalUpdated = 0;
 
-      for (const course of courses) {
-        if (!course.name || !course.id) continue;
-        console.log(`📘 Course: ${course.name} (${course.id})`);
+    for (const config of canvasConfigs) {
+      console.log(`🔍 Syncing from ${config.label}...`);
+      try {
+        // Fetch all courses (all pages)
+        const courses = await fetchAllPages(`${config.baseUrl}/api/v1/courses`, config.token);
+        console.log(`   ➤ Got ${courses.length} courses`);
 
-        // Fetch all assignments (all pages) for each course
-        const assignments = await fetchAllPages(`${config.baseUrl}/api/v1/courses/${course.id}/assignments`, config.token);
-        console.log(`   ➤ Found ${assignments.length} assignments for ${course.name}`);
+        for (const course of courses) {
+          if (!course.name || !course.id) continue;
+          console.log(`📘 Course: ${course.name} (${course.id})`);
 
-        // Log assignment names for debugging
-        assignments.forEach(a => console.log(`      🔍 Raw assignment: ${a.name}`));
+          // Fetch assignments for the course
+          const assignments = await fetchAllPages(`${config.baseUrl}/api/v1/courses/${course.id}/assignments`, config.token);
+          console.log(`   ➤ Found ${assignments.length} assignments for ${course.name}`);
 
-        // Fetch modules to get extra content (readings, animations, lectures inside modules)
-        let modules = [];
-        try {
-          modules = await fetchModules(config.baseUrl, course, config.token);
-        } catch (modErr) {
-          console.error(`      ❌ Failed to fetch modules for ${course.name}: ${modErr.message}`);
-        }
-
-        // For each module, fetch module items and scrape content
-        for (const module of modules) {
-          let moduleItems = [];
+          // Fetch modules for the course
+          let modules = [];
           try {
-            moduleItems = await fetchModuleItems(config.baseUrl, course, module, config.token);
-          } catch (itemErr) {
-            console.error(`         ❌ Failed to fetch module items for module ${module.name}: ${itemErr.message}`);
+            modules = await fetchModules(config.baseUrl, course, config.token);
+          } catch (modErr) {
+            console.error(`      ❌ Failed to fetch modules for ${course.name}: ${modErr.message}`);
           }
 
-          for (const item of moduleItems) {
-            // Only try scraping if item has a URL (usually pages, files, external URLs)
-            if (!item.url) continue;
+          if (modules.length === 0) {
+            console.log(`      ⚠️ No modules found for ${course.name}, syncing assignments as standalone resources`);
 
-            const contentText = await fetchAndParseModuleItemContent(course, item, config.token);
-
-            if (contentText) {
-              console.log(`         ✨ Scraped content from "${item.title}":\n${contentText.substring(0, 200)}...`);
-              // You could extend here: Create or update Notion pages with this content if you want
-            }
-          }
-        }
-
-        // Now sync assignments to Notion (create or update)
-        for (const assignment of assignments) {
-          // Check if this assignment already exists in Notion by Canvas Assignment ID
-          const existingAssignment = await notion.databases.query({
-            database_id: NOTION_DB_ID,
-            filter: {
-              property: "Canvas Assignment ID",
-              rich_text: {
-                equals: assignment.id.toString(),
-              },
-            },
-          });
-
-          // Prepare cleaned name and type
-          const detectedType = detectTypeFromName(assignment.name);
-          let cleanName = cleanAssignmentName(assignment.name, detectedType);
-          cleanName = renameShortAnswerWorksheet(cleanName);
-
-          const coursePageId = await findCoursePageId(course.name);
-          if (!coursePageId) {
-            console.log(`⚠️ No matching Notion course page for "${course.name}", skipping this assignment.`);
-            continue;
-          }
-
-          if (existingAssignment.results.length > 0) {
-            // If exists, update the existing page
-            const pageId = existingAssignment.results[0].id;
-
-            try {
-              await notion.pages.update({
-                page_id: pageId,
-                properties: {
-                  Name: {
-                    title: [{ text: { content: cleanName } }],
-                  },
-                  Type: {
-                    select: { name: detectedType },
-                  },
-                  Due: assignment.due_at
-                    ? { date: { start: assignment.due_at } }
-                    : undefined,
-                  "Chapter/Module": {
-                    rich_text: [{ text: { content: detectModule(assignment.name) } }],
-                  },
-                  "Submission Status": {
-                    multi_select: [{ name: detectSubmissionStatus(assignment) }],
-                  },
-                  Course: {
-                    relation: [{ id: coursePageId }],
-                  },
-                  "Canvas Assignment ID": {
-                    rich_text: [{ text: { content: assignment.id.toString() } }],
+            for (const assignment of assignments) {
+              const existingResource = await notion.databases.query({
+                database_id: MODULE_CONTENT_DB_ID,
+                filter: {
+                  property: "Canvas Assignment ID",
+                  rich_text: {
+                    equals: assignment.id.toString(),
                   },
                 },
               });
 
-              console.log(`♻️ Updated assignment "${assignment.name}"`);
-            } catch (updateErr) {
-              console.error(`❌ Failed to update Notion page: ${updateErr.message}`);
+              const detectedType = detectTypeFromName(assignment.name);
+              let cleanName = cleanAssignmentName(assignment.name, detectedType);
+              cleanName = renameShortAnswerWorksheet(cleanName);
+
+              const coursePageId = await findCoursePageId(course.name);
+              if (!coursePageId) {
+                console.log(`         ⚠️ No matching Notion course page for "${course.name}", skipping resource.`);
+                continue;
+              }
+
+              if (existingResource.results.length > 0) {
+                const pageId = existingResource.results[0].id;
+                try {
+                  await notion.pages.update({
+                    page_id: pageId,
+                    properties: {
+                      Title: {
+                        title: [{ text: { content: cleanName } }],
+                      },
+                      Type: {
+                        select: { name: detectedType },
+                      },
+                      Course: {
+                        relation: [{ id: coursePageId }],
+                      },
+                      "Canvas Assignment ID": {
+                        rich_text: [{ text: { content: assignment.id.toString() } }],
+                      },
+                      Content: {
+                        rich_text: [{ text: { content: "" } }],
+                      },
+                    },
+                  });
+                  totalUpdated++;
+                  console.log(`♻️ Updated resource "${assignment.name}" (fallback)`);
+                } catch (updateErr) {
+                  console.error(`❌ Failed to update resource page: ${updateErr.message}`);
+                }
+              } else {
+                try {
+                  await notion.pages.create({
+                    parent: { database_id: MODULE_CONTENT_DB_ID },
+                    properties: {
+                      Title: {
+                        title: [{ text: { content: cleanName } }],
+                      },
+                      Type: {
+                        select: { name: detectedType },
+                      },
+                      Course: {
+                        relation: [{ id: coursePageId }],
+                      },
+                      "Canvas Assignment ID": {
+                        rich_text: [{ text: { content: assignment.id.toString() } }],
+                      },
+                      Content: {
+                        rich_text: [{ text: { content: "" } }],
+                      },
+                    },
+                  });
+                  totalCreated++;
+                  console.log(`✅ Created resource "${assignment.name}" (fallback)`);
+                } catch (createErr) {
+                  console.error(`❌ Failed to create resource page: ${createErr.message}`);
+                }
+              }
             }
           } else {
-            // If not exists, create a new page
-            try {
-              await notion.pages.create({
-                parent: { database_id: NOTION_DB_ID },
-                properties: {
-                  Name: {
-                    title: [{ text: { content: cleanName } }],
-                  },
-                  Type: {
-                    select: { name: detectedType },
-                  },
-                  Due: assignment.due_at
-                    ? { date: { start: assignment.due_at } }
-                    : undefined,
-                  "Chapter/Module": {
-                    rich_text: [{ text: { content: detectModule(assignment.name) } }],
-                  },
-                  "Submission Status": {
-                    multi_select: [{ name: detectSubmissionStatus(assignment) }],
-                  },
-                  Course: {
-                    relation: [{ id: coursePageId }],
-                  },
-                  "Canvas Assignment ID": {
-                    rich_text: [{ text: { content: assignment.id.toString() } }],
-                  },
-                },
-              });
+            // For each module, fetch module items and sync as resources
+            for (const module of modules) {
+              let moduleItems = [];
+              try {
+                moduleItems = await fetchModuleItems(config.baseUrl, course, module, config.token);
+              } catch (itemErr) {
+                console.error(`         ❌ Failed to fetch module items for module ${module.name}: ${itemErr.message}`);
+              }
 
-              totalCreated++;
-              console.log(`✅ Created assignment "${assignment.name}"`);
-            } catch (createErr) {
-              console.error(`❌ Failed to create Notion page: ${createErr.message}`);
+              for (const item of moduleItems) {
+                if (!item.url) continue;
+
+                const contentText = await fetchAndParseModuleItemContent(course, item, config.token);
+                if (!contentText) continue;
+
+                const existingResource = await notion.databases.query({
+                  database_id: MODULE_CONTENT_DB_ID,
+                  filter: {
+                    property: "Module Item ID",
+                    rich_text: {
+                      equals: item.id.toString(),
+                    },
+                  },
+                });
+
+                const coursePageId = await findCoursePageId(course.name);
+                if (!coursePageId) {
+                  console.log(`         ⚠️ No matching Notion course page for "${course.name}", skipping module content.`);
+                  continue;
+                }
+
+                if (existingResource.results.length > 0) {
+                  const pageId = existingResource.results[0].id;
+                  try {
+                    await notion.pages.update({
+                      page_id: pageId,
+                      properties: {
+                        Content: {
+                          rich_text: [{ text: { content: contentText } }],
+                        },
+                        Module: {
+                          rich_text: [{ text: { content: module.name } }],
+                        },
+                        Course: {
+                          relation: [{ id: coursePageId }],
+                        },
+                        Type: {
+                          select: { name: item.type || "Module Item" },
+                        },
+                        "Module Item ID": {
+                          rich_text: [{ text: { content: item.id.toString() } }],
+                        },
+                      },
+                    });
+                    totalUpdated++;
+                    console.log(`♻️ Updated module content "${item.title}"`);
+                  } catch (updateErr) {
+                    console.error(`❌ Failed to update module content page: ${updateErr.message}`);
+                  }
+                } else {
+                  try {
+                    await notion.pages.create({
+                      parent: { database_id: MODULE_CONTENT_DB_ID },
+                      properties: {
+                        Title: {
+                          title: [{ text: { content: item.title } }],
+                        },
+                        Module: {
+                          rich_text: [{ text: { content: module.name } }],
+                        },
+                        Course: {
+                          relation: [{ id: coursePageId }],
+                        },
+                        Type: {
+                          select: { name: item.type || "Module Item" },
+                        },
+                        "Module Item ID": {
+                          rich_text: [{ text: { content: item.id.toString() } }],
+                        },
+                        Content: {
+                          rich_text: [{ text: { content: contentText } }],
+                        },
+                      },
+                    });
+                    totalCreated++;
+                    console.log(`✅ Created module content "${item.title}"`);
+                  } catch (createErr) {
+                    console.error(`❌ Failed to create module content page: ${createErr.message}`);
+                  }
+                }
+              }
+            }
+          }
+
+          // Now sync assignments as usual (create or update)
+          for (const assignment of assignments) {
+            // Check if assignment exists by Canvas Assignment ID
+            const existingAssignment = await notion.databases.query({
+              database_id: NOTION_DB_ID,
+              filter: {
+                property: "Canvas Assignment ID",
+                rich_text: {
+                  equals: assignment.id.toString(),
+                },
+              },
+            });
+
+            const detectedType = detectTypeFromName(assignment.name);
+            let cleanName = cleanAssignmentName(assignment.name, detectedType);
+            cleanName = renameShortAnswerWorksheet(cleanName);
+
+            const coursePageId = await findCoursePageId(course.name);
+            if (!coursePageId) {
+              console.log(`⚠️ No matching Notion course page for "${course.name}", skipping assignment.`);
+              continue;
+            }
+
+            if (existingAssignment.results.length > 0) {
+              const pageId = existingAssignment.results[0].id;
+              try {
+                await notion.pages.update({
+                  page_id: pageId,
+                  properties: {
+                    Name: {
+                      title: [{ text: { content: cleanName } }],
+                    },
+                    Type: {
+                      select: { name: detectedType },
+                    },
+                    Due: assignment.due_at
+                      ? { date: { start: assignment.due_at } }
+                      : undefined,
+                    "Chapter/Module": {
+                      rich_text: [{ text: { content: detectModule(assignment.name) } }],
+                    },
+                    "Submission Status": {
+                      multi_select: [{ name: detectSubmissionStatus(assignment) }],
+                    },
+                    Course: {
+                      relation: [{ id: coursePageId }],
+                    },
+                    "Canvas Assignment ID": {
+                      rich_text: [{ text: { content: assignment.id.toString() } }],
+                    },
+                  },
+                });
+                console.log(`♻️ Updated assignment "${assignment.name}"`);
+              } catch (updateErr) {
+                console.error(`❌ Failed to update assignment page: ${updateErr.message}`);
+              }
+            } else {
+              try {
+                await notion.pages.create({
+                  parent: { database_id: NOTION_DB_ID },
+                  properties: {
+                    Name: {
+                      title: [{ text: { content: cleanName } }],
+                    },
+                    Type: {
+                      select: { name: detectedType },
+                    },
+                    Due: assignment.due_at
+                      ? { date: { start: assignment.due_at } }
+                      : undefined,
+                    "Chapter/Module": {
+                      rich_text: [{ text: { content: detectModule(assignment.name) } }],
+                    },
+                    "Submission Status": {
+                      multi_select: [{ name: detectSubmissionStatus(assignment) }],
+                    },
+                    Course: {
+                      relation: [{ id: coursePageId }],
+                    },
+                    "Canvas Assignment ID": {
+                      rich_text: [{ text: { content: assignment.id.toString() } }],
+                    },
+                  },
+                });
+
+                totalCreated++;
+                console.log(`✅ Created assignment "${assignment.name}"`);
+              } catch (createErr) {
+                console.error(`❌ Failed to create assignment page: ${createErr.message}`);
+              }
             }
           }
         }
+      } catch (err) {
+        console.error(`❌ Error syncing ${config.label}:`, err.message);
       }
-    } catch (err) {
-      console.error(`❌ Error syncing ${config.label}:`, err.message);
     }
-  }
 
-  res.send(`✅ Synced ${totalCreated} assignments to Notion!`);
-});
+    res.send(`✅ Synced ${totalCreated} assignments and ${totalUpdated} resources to Notion!`);
+  });
+
 // 🔓 Welcome route
 app.get("/", (req, res) => {
   res.send("👋 Welcome to your Notion Class Importer!");
