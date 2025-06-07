@@ -9,7 +9,6 @@ const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 
 const NOTION_DB_ID = process.env.NOTION_DB_ID;
 const COURSE_PLANNER_DB = process.env.COURSE_PLANNER_DB;
-const MODULE_CONTENT_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
 const canvasConfigs = [
   {
@@ -191,20 +190,12 @@ async function fetchAndParseModuleItemContent(course, item, token) {
   }
 }
 
+  // At the top, add this to load your new secret from environment variables:
+  const MODULE_CONTENT_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
+
   // --- Updated Sync Route ---
   app.get("/sync", async (req, res) => {
     console.log("SYNC ROUTE HIT");
-    
-    // Validate required environment variables
-    if (!NOTION_DB_ID || !COURSE_PLANNER_DB || !MODULE_CONTENT_DB_ID) {
-      console.error("❌ Missing required environment variables");
-      return res.status(500).send("Missing required environment variables");
-    }
-    
-    if (canvasConfigs.length === 0) {
-      console.error("❌ No Canvas configurations found");
-      return res.status(500).send("No Canvas configurations found");
-    }
 
     let totalCreated = 0;
     let totalUpdated = 0;
