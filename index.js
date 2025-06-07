@@ -146,15 +146,15 @@ function renameShortAnswerWorksheet(name) {
 }
 
 // --- New: Fetch modules for a course ---
-async function fetchModules(course, token) {
-  const modules = await fetchAllPages(`${course.baseUrl || course.url || course.base_url}/api/v1/courses/${course.id}/modules`, token);
+async function fetchModules(baseUrl, course, token) {
+  const modules = await fetchAllPages(`${baseUrl}/api/v1/courses/${course.id}/modules`, token);
   console.log(`   ➤ Found ${modules.length} modules for course ${course.name}`);
   return modules;
 }
 
 // --- New: Fetch module items for a module ---
-async function fetchModuleItems(course, module, token) {
-  const moduleItems = await fetchAllPages(`${course.baseUrl || course.url || course.base_url}/api/v1/courses/${course.id}/modules/${module.id}/items`, token);
+async function fetchModuleItems(baseUrl, course, module, token) {
+  const moduleItems = await fetchAllPages(`${baseUrl}/api/v1/courses/${course.id}/modules/${module.id}/items`, token);
   console.log(`      ➤ Found ${moduleItems.length} items in module "${module.name}"`);
   return moduleItems;
 }
@@ -217,7 +217,7 @@ app.get("/sync", async (req, res) => {
         // Fetch modules to get extra content (readings, animations, lectures inside modules)
         let modules = [];
         try {
-          modules = await fetchModules(course, config.token);
+          modules = await fetchModules(config.baseUrl, course, config.token);
         } catch (modErr) {
           console.error(`      ❌ Failed to fetch modules for ${course.name}: ${modErr.message}`);
         }
@@ -226,7 +226,7 @@ app.get("/sync", async (req, res) => {
         for (const module of modules) {
           let moduleItems = [];
           try {
-            moduleItems = await fetchModuleItems(course, module, config.token);
+            moduleItems = await fetchModuleItems(config.baseUrl, course, module, config.token);
           } catch (itemErr) {
             console.error(`         ❌ Failed to fetch module items for module ${module.name}: ${itemErr.message}`);
           }
