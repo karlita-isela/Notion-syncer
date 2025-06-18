@@ -10,7 +10,7 @@ const TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
 const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-const COURSE_CODE = "MCELLBI X116"; // Use course prefix only
+const COURSE_CODE = "MCELLBI X116"; // Match title prefix in Notion "Name" field
 
 async function fetchAllPages(url) {
   let results = [];
@@ -53,7 +53,6 @@ async function fetchContentText(item) {
   }
 }
 
-// ✅ FIXED: Match against the Notion TITLE field ("Name")
 async function findCoursePageId(courseCode) {
   const res = await notion.databases.query({
     database_id: COURSE_PLANNER_DB_ID,
@@ -98,7 +97,7 @@ export default async function handler(req, res) {
             Module: { rich_text: [{ text: { content: module.name || "(No Module)" } }] },
             Type: item.type ? { select: { name: item.type } } : undefined,
             Link: item.external_url ? { url: item.external_url } : item.html_url ? { url: item.html_url } : undefined,
-            Summary: content ? { rich_text: [{ text: { content } }] } : undefined,
+            Content: content ? { rich_text: [{ text: { content } }] } : undefined,
             "Last Synced": { date: { start: new Date().toISOString() } },
             "Auto-generated": { checkbox: true },
           };
@@ -114,7 +113,7 @@ export default async function handler(req, res) {
 
           count++;
         } catch (err) {
-          console.error(`❌ ${item.title}: ${err.message}`);
+          console.error(`❌ ${item.title || "Unnamed"}: ${err.message}`);
         }
       }
     }
