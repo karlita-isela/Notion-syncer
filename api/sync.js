@@ -1,6 +1,6 @@
 import { Client } from '@notionhq/client';
 import fetch from 'node-fetch';
-import cheerio from 'cheerio';
+import * as cheerio from 'cheerio';
 
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 
