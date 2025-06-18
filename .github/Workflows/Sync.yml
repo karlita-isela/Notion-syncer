@@ -1,0 +1,14 @@
+name: Sync Notion with Canvas (Every 4 Hours)
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Every 4 hours (UTC)
+  workflow_dispatch:       # Allows manual run from GitHub UI
+
+jobs:
+  trigger-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Vercel Sync Route
+        run: |
+          curl -s -X GET https://notion-syncer.vercel.app/api/sync
