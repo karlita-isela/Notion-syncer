@@ -52,7 +52,7 @@ async function fetchAndParseModuleItemContent(course, item, token) {
 
 export default async function handler(req, res) {
   try {
-    console.log("📚 Syncing Canvas module resources...");
+    console.log("📚 Starting /api/sync-resources...");
     const MODULE_CONTENT_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
     const COURSE_PLANNER_DB = process.env.COURSE_PLANNER_DB;
     let resourceCount = 0;
@@ -61,6 +61,8 @@ export default async function handler(req, res) {
       const courses = await fetchAllPages(`${config.baseUrl}/api/v1/courses`, config.token);
       for (const course of courses) {
         if (!course.name || !course.id || course.workflow_state !== "available") continue;
+
+        console.log(`🔍 Syncing resources for: ${course.name}`);
 
         const modules = await fetchAllPages(`${config.baseUrl}/api/v1/courses/${course.id}/modules`, config.token);
         for (const module of modules) {
@@ -78,7 +80,9 @@ export default async function handler(req, res) {
 
             const props = {
               Name: { title: [{ text: { content: item.title || "Untitled" } }] },
-              "Canvas Module Item ID": { rich_text: [{ text: { content: item.id.toString() } }] },
+              "Canvas Module Item ID": {
+                rich_text: [{ text: { content: item.id.toString() } }],
+              },
               Course: { rich_text: [{ text: { content: course.name } }] },
               Module: { rich_text: [{ text: { content: module.name || "(No Module)" } }] },
               Link: item.external_url
@@ -98,11 +102,13 @@ export default async function handler(req, res) {
                 page_id: notionQuery.results[0].id,
                 properties: props,
               });
+              console.log(`♻️ Updated: ${item.title}`);
             } else {
               await notion.pages.create({
                 parent: { database_id: MODULE_CONTENT_DB_ID },
                 properties: props,
               });
+              console.log(`✨ Created: ${item.title}`);
             }
 
             resourceCount++;
@@ -111,7 +117,7 @@ export default async function handler(req, res) {
       }
     }
 
-    res.status(200).send(`✅ Synced ${resourceCount} module resources`);
+    res.status(200).send(`✅ Synced ${resourceCount} module resource items`);
   } catch (err) {
     console.error("❌ sync-resources failed:", err.message);
     res.status(500).send("❌ sync-resources failed");
