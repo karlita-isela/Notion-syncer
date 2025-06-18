@@ -1,0 +1,15 @@
+name: 📊 Sync Intro to Statistics Resources
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # Every day at 6:00am UTC
+  workflow_dispatch:
+
+jobs:
+  sync-stats-resources:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⏳ Trigger Intro to Statistics Resources Sync
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.VERCEL_DEPLOYMENT_URL }}/api/sync-resources-stats"
