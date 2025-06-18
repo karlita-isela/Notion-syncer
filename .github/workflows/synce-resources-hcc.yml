@@ -1,0 +1,15 @@
+name: 🧪 Sync HCC Chemistry Resources
+
+on:
+  schedule:
+    - cron: "0 4 * * *"  # Every day at 4:00am UTC
+  workflow_dispatch:
+
+jobs:
+  sync-hcc-resources:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⏳ Trigger HCC Resources Sync
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.VERCEL_DEPLOYMENT_URL }}/api/sync-resources-hcc"
