@@ -1,0 +1,29 @@
+name: Daily Resource Sync
+
+on:
+  schedule:
+    - cron: "0 10 * * *"  # Runs every day at 10:00 UTC
+  workflow_dispatch:     # Optional: lets you manually run it from the GitHub Actions tab
+
+jobs:
+  sync-resources:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🔧 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 📦 Install dependencies
+        run: npm install
+
+      - name: 🚀 Call /api/sync-resources endpoint on Vercel
+        env:
+          PING_URL: ${{ secrets.VERCEL_RESOURCES_URL }}
+        run: |
+          echo "🌐 Calling $PING_URL"
+          curl -s -f "$PING_URL" || echo "❌ Failed to call endpoint"
