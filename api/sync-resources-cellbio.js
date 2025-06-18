@@ -14,7 +14,7 @@ const canvasConfig = {
   token: process.env.CANVAS_2_API_TOKEN,
   baseUrl: process.env.CANVAS_2_API_BASE,
   label: process.env.CANVAS_2_LABEL,
-  courseName: 'MCELLBI X116' // Exact match for Cell Bio
+  courseName: 'MCELLBI X116 – Cell Biology' // Exact match for Cell Bio
 };
 
 // ==============================
