@@ -10,7 +10,7 @@ const TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
 const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-const COURSE_CODE = "MCELLBI X116"; // Prefix match
+const COURSE_CODE = "MCELLBI X116";
 
 async function fetchAllPages(url) {
   let results = [];
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
           });
 
           const props = {
-            Name: { title: [{ text: { content: item.title || "Untitled" } }] },
+            title: { title: [{ text: { content: item.title || "Untitled" } }] },
             "Canvas Module Item ID": { rich_text: [{ text: { content: item.id.toString() } }] },
             Course: { relation: [{ id: coursePageId }] },
             Module: { rich_text: [{ text: { content: module.name || "(No Module)" } }] },
