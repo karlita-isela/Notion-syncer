@@ -10,7 +10,7 @@ const TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
 const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-const COURSE_CODE = "MCELLBI X116"; // Prefix to match Notion course
+const COURSE_CODE = "MCELLBI X116"; // For matching Notion course page
 
 async function fetchAllPages(url) {
   let results = [];
@@ -73,6 +73,10 @@ export default async function handler(req, res) {
     const coursePageId = await findCoursePageId(COURSE_CODE);
     if (!coursePageId) throw new Error(`Course "${COURSE_CODE}" not found in Notion`);
 
+    // 🧪 DEBUG: Check schema
+    const debug = await notion.databases.retrieve({ database_id: RESOURCE_DB_ID });
+    console.log("✅ Notion DB properties:", Object.keys(debug.properties));
+
     const modules = await fetchModules();
     let count = 0;
 
@@ -91,10 +95,26 @@ export default async function handler(req, res) {
           });
 
           const props = {
-            Name: { title: [{ text: { content: item.title || "(Untitled Resource)" } }] },
-            "Canvas Module Item ID": { rich_text: [{ text: { content: item.id.toString() } }] },
-            Course: { relation: [{ id: coursePageId }] },
-            Module: { rich_text: [{ text: { content: module.name || "(No Module)" } }] },
+            Name: {
+              type: "title",
+              title: [
+                {
+                  type: "text",
+                  text: {
+                    content: item.title || "(Untitled Resource)",
+                  },
+                },
+              ],
+            },
+            "Canvas Module Item ID": {
+              rich_text: [{ text: { content: item.id.toString() } }],
+            },
+            Course: {
+              relation: [{ id: coursePageId }],
+            },
+            Module: {
+              rich_text: [{ text: { content: module.name || "(No Module)" } }],
+            },
             Type: item.type ? { select: { name: item.type } } : undefined,
             Link: item.external_url
               ? { url: item.external_url }
@@ -105,6 +125,10 @@ export default async function handler(req, res) {
             "Last Synced": { date: { start: new Date().toISOString() } },
             "Auto-generated": { checkbox: true },
           };
+
+          if (!props.Name?.title?.[0]?.text?.content) {
+            throw new Error("🛑 Missing 'Name' field — Notion will reject this.");
+          }
 
           if (notionQuery.results.length > 0) {
             await notion.pages.update({
