@@ -7,7 +7,10 @@ const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 const COURSE_ID = process.env.CANVAS_CELLBIO_COURSE_ID;
 const BASE_URL = process.env.CANVAS_2_API_BASE;
 const TOKEN = process.env.CANVAS_2_API_TOKEN;
-const COURSE_CODE = "MCELLBI X116";
+const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
+const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
+
+const COURSE_CODE = "MCELLBI X116"; // Hardcoded base prefix
 
 async function fetchAllPages(url) {
   let results = [];
@@ -37,7 +40,6 @@ async function fetchModuleItems(moduleId) {
 
 async function fetchContentText(item) {
   if (!item.url) return null;
-
   try {
     const res = await fetch(item.url, {
       headers: { Authorization: `Bearer ${TOKEN}` },
@@ -46,14 +48,14 @@ async function fetchContentText(item) {
     const html = await res.text();
     const $ = cheerio.load(html);
     return $("div.content, div.syllabus, div.lecture-content").text().trim().slice(0, 2000);
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 async function findCoursePageId(courseCode) {
   const res = await notion.databases.query({
-    database_id: process.env.COURSE_PLANNER_DB,
+    database_id: COURSE_PLANNER_DB_ID,
     filter: {
       property: "Canvas Course Name",
       rich_text: {
@@ -66,9 +68,10 @@ async function findCoursePageId(courseCode) {
 
 export default async function handler(req, res) {
   try {
-    console.log("🔬 Syncing Cell Bio module content...");
+    console.log("🔬 Syncing Cell Bio...");
+
     const coursePageId = await findCoursePageId(COURSE_CODE);
-    if (!coursePageId) throw new Error("Course not found in Notion");
+    if (!coursePageId) throw new Error(`Course "${COURSE_CODE}" not found in Notion`);
 
     const modules = await fetchModules();
     let count = 0;
@@ -80,7 +83,7 @@ export default async function handler(req, res) {
           const content = await fetchContentText(item);
 
           const notionQuery = await notion.databases.query({
-            database_id: process.env.NOTION_COURSE_RESOURCE_DB_ID,
+            database_id: RESOURCE_DB_ID,
             filter: {
               property: "Canvas Module Item ID",
               rich_text: { equals: item.id.toString() },
@@ -103,7 +106,7 @@ export default async function handler(req, res) {
             await notion.pages.update({ page_id: notionQuery.results[0].id, properties: props });
           } else {
             await notion.pages.create({
-              parent: { database_id: process.env.NOTION_COURSE_RESOURCE_DB_ID },
+              parent: { database_id: RESOURCE_DB_ID },
               properties: props,
             });
           }
