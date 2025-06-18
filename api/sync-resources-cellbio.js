@@ -1,159 +1,158 @@
-import { Client } from '@notionhq/client';
-import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
+// ==============================
+// sync-resources-cellbio.js
+// ==============================
+
+import { Client } from "@notionhq/client";
+import fetch from "node-fetch";
+import "dotenv/config";
 
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 
-const COURSE_ID = process.env.CANVAS_CELLBIO_COURSE_ID;
-const BASE_URL = process.env.CANVAS_2_API_BASE;
-const TOKEN = process.env.CANVAS_2_API_TOKEN;
-const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
-const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
+const COURSE_NAME = "MCELLBI X116";
+const COURSE_LABEL = "Cell Bio";
+const CANVAS_BASE = process.env.CANVAS_2_API_BASE;
+const CANVAS_TOKEN = process.env.CANVAS_2_API_TOKEN;
+const COURSE_RESOURCE_DB = process.env.NOTION_COURSE_RESOURCE_DB_ID;
+const COURSE_PLANNER_DB = process.env.COURSE_PLANNER_DB;
 
-const COURSE_CODE = "MCELLBI X116"; // For matching Notion course page
-
-async function fetchAllPages(url) {
-  let results = [];
-  let nextUrl = url;
-
-  while (nextUrl) {
-    const res = await fetch(nextUrl, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    });
-    const data = await res.json();
-    results = results.concat(data);
-    const linkHeader = res.headers.get("link");
-    const match = linkHeader && linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-    nextUrl = match ? match[1] : null;
-  }
-
-  return results;
+// ==============================
+// Fetch Canvas Courses
+// ==============================
+async function getCanvasCourses() {
+  const res = await fetch(`${CANVAS_BASE}/api/v1/courses`, {
+    headers: { Authorization: `Bearer ${CANVAS_TOKEN}` },
+  });
+  return res.json();
 }
 
-async function fetchModules() {
-  return fetchAllPages(`${BASE_URL}/api/v1/courses/${COURSE_ID}/modules`);
-}
-
-async function fetchModuleItems(moduleId) {
-  return fetchAllPages(`${BASE_URL}/api/v1/courses/${COURSE_ID}/modules/${moduleId}/items`);
-}
-
-async function fetchContentText(item) {
-  if (!item.url) return null;
-  try {
-    const res = await fetch(item.url, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    const $ = cheerio.load(html);
-    return $("div.content, div.syllabus, div.lecture-content").text().trim().slice(0, 2000);
-  } catch {
-    return null;
-  }
-}
-
-async function findCoursePageId(courseCode) {
-  const res = await notion.databases.query({
-    database_id: COURSE_PLANNER_DB_ID,
+// ==============================
+// Get Notion Course Page ID
+// ==============================
+async function findCoursePageId() {
+  const response = await notion.databases.query({
+    database_id: COURSE_PLANNER_DB,
     filter: {
       property: "Name",
-      title: {
-        starts_with: courseCode,
+      rich_text: {
+        contains: COURSE_NAME,
       },
     },
   });
-  return res.results.length ? res.results[0].id : null;
+
+  if (response.results.length === 0) {
+    console.error(`❌ Course '${COURSE_NAME}' not found in Notion Course Planner DB`);
+    return null;
+  }
+
+  return response.results[0].id;
 }
 
-export default async function handler(req, res) {
-  try {
-    console.log("🧬 Syncing Cell Bio module content...");
+// ==============================
+// Fetch Canvas Modules + Items
+// ==============================
+async function getCanvasModuleItems(canvasCourseId) {
+  const modulesRes = await fetch(
+    `${CANVAS_BASE}/api/v1/courses/${canvasCourseId}/modules?include=items&per_page=100`,
+    { headers: { Authorization: `Bearer ${CANVAS_TOKEN}` } }
+  );
+  return modulesRes.json();
+}
 
-    const coursePageId = await findCoursePageId(COURSE_CODE);
-    if (!coursePageId) throw new Error(`Course "${COURSE_CODE}" not found in Notion`);
+// ==============================
+// Main Sync Logic
+// ==============================
+(async () => {
+  console.log("📡 Starting Cell Bio Resource Sync...");
 
-    // 🧪 DEBUG: Check schema
-    const debug = await notion.databases.retrieve({ database_id: RESOURCE_DB_ID });
-    console.log("✅ Notion DB properties:", Object.keys(debug.properties));
+  const coursePageId = await findCoursePageId();
+  if (!coursePageId) return;
 
-    const modules = await fetchModules();
-    let count = 0;
+  const canvasCourses = await getCanvasCourses();
+  const course = canvasCourses.find((c) => c.name.startsWith(COURSE_NAME));
+  if (!course) {
+    console.error(`❌ Canvas course '${COURSE_NAME}' not found`);
+    return;
+  }
 
-    for (const module of modules) {
-      const items = await fetchModuleItems(module.id);
-      for (const item of items) {
-        try {
-          const content = await fetchContentText(item);
+  const modules = await getCanvasModuleItems(course.id);
+  if (!modules || modules.length === 0) {
+    console.warn(`⚠️ No modules found for Canvas course: ${COURSE_NAME}`);
+    return;
+  }
 
-          const notionQuery = await notion.databases.query({
-            database_id: RESOURCE_DB_ID,
-            filter: {
-              property: "Canvas Module Item ID",
-              rich_text: { equals: item.id.toString() },
+  let syncedCount = 0;
+
+  for (const module of modules) {
+    const moduleName = module.name || "Untitled Module";
+
+    for (const item of module.items || []) {
+      const title = item.title || item.page_url || "Untitled";
+      const canvasId = String(item.id);
+
+      try {
+        // Check if this item already exists in Notion
+        const existing = await notion.databases.query({
+          database_id: COURSE_RESOURCE_DB,
+          filter: {
+            property: "Canvas Module Item ID",
+            rich_text: {
+              equals: canvasId,
             },
+          },
+        });
+
+        const props = {
+          Name: {
+            title: [{ type: "text", text: { content: title } }],
+          },
+          Type: {
+            select: {
+              name: item.type || "Link",
+            },
+          },
+          Content: {
+            rich_text: [{ type: "text", text: { content: item.title || "" } }],
+          },
+          Course: {
+            relation: [{ id: coursePageId }],
+          },
+          Module: {
+            rich_text: [{ type: "text", text: { content: moduleName } }],
+          },
+          Link: {
+            url: item.html_url,
+          },
+          "Canvas Module Item ID": {
+            rich_text: [{ type: "text", text: { content: canvasId } }],
+          },
+          "Last Synced": {
+            date: { start: new Date().toISOString() },
+          },
+          "Auto-generated": {
+            checkbox: true,
+          },
+        };
+
+        if (existing.results.length > 0) {
+          await notion.pages.update({
+            page_id: existing.results[0].id,
+            properties: props,
           });
-
-          const props = {
-            Name: {
-              type: "title",
-              title: [
-                {
-                  type: "text",
-                  text: {
-                    content: item.title || "(Untitled Resource)",
-                  },
-                },
-              ],
-            },
-            "Canvas Module Item ID": {
-              rich_text: [{ text: { content: item.id.toString() } }],
-            },
-            Course: {
-              relation: [{ id: coursePageId }],
-            },
-            Module: {
-              rich_text: [{ text: { content: module.name || "(No Module)" } }],
-            },
-            Type: item.type ? { select: { name: item.type } } : undefined,
-            Link: item.external_url
-              ? { url: item.external_url }
-              : item.html_url
-              ? { url: item.html_url }
-              : undefined,
-            Content: content ? { rich_text: [{ text: { content } }] } : undefined,
-            "Last Synced": { date: { start: new Date().toISOString() } },
-            "Auto-generated": { checkbox: true },
-          };
-
-          if (!props.Name?.title?.[0]?.text?.content) {
-            throw new Error("🛑 Missing 'Name' field — Notion will reject this.");
-          }
-
-          if (notionQuery.results.length > 0) {
-            await notion.pages.update({
-              page_id: notionQuery.results[0].id,
-              properties: props,
-            });
-            console.log(`♻️ Updated: ${item.title}`);
-          } else {
-            await notion.pages.create({
-              parent: { database_id: RESOURCE_DB_ID },
-              properties: props,
-            });
-            console.log(`✨ Created: ${item.title}`);
-          }
-
-          count++;
-        } catch (err) {
-          console.error(`❌ ${item.title}: ${err.message}`);
+          console.log(`♻️ Updated: ${title}`);
+        } else {
+          await notion.pages.create({
+            parent: { database_id: COURSE_RESOURCE_DB },
+            properties: props,
+          });
+          console.log(`✨ Created: ${title}`);
         }
+
+        syncedCount++;
+      } catch (err) {
+        console.error(`❌ Error syncing "${title}":`, err.message);
       }
     }
-
-    res.status(200).send(`✅ Synced ${count} Cell Bio items`);
-  } catch (err) {
-    console.error("❌ sync-resources-cellbio failed:", err.message);
-    res.status(500).send("❌ sync-resources-cellbio failed");
   }
-}
+
+  console.log(`✅ Synced ${syncedCount} Cell Bio resources`);
+})();
