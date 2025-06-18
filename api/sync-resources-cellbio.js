@@ -9,7 +9,6 @@ import "dotenv/config";
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 
 const COURSE_NAME = "MCELLBI X116";
-const COURSE_LABEL = "Cell Bio";
 const CANVAS_BASE = process.env.CANVAS_2_API_BASE;
 const CANVAS_TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_RESOURCE_DB = process.env.NOTION_COURSE_RESOURCE_DB_ID;
@@ -90,7 +89,6 @@ async function getCanvasModuleItems(canvasCourseId) {
       const canvasId = String(item.id);
 
       try {
-        // Check if this item already exists in Notion
         const existing = await notion.databases.query({
           database_id: COURSE_RESOURCE_DB,
           filter: {
@@ -102,28 +100,52 @@ async function getCanvasModuleItems(canvasCourseId) {
         });
 
         const props = {
-          Name: {
-            title: [{ type: "text", text: { content: title } }],
+          "Name": {
+            title: [
+              {
+                text: {
+                  content: title || "Untitled Resource",
+                },
+              },
+            ],
           },
-          Type: {
+          "Type": {
             select: {
               name: item.type || "Link",
             },
           },
-          Content: {
-            rich_text: [{ type: "text", text: { content: item.title || "" } }],
+          "Content": {
+            rich_text: [
+              {
+                text: {
+                  content: item.title || "",
+                },
+              },
+            ],
           },
-          Course: {
+          "Course": {
             relation: [{ id: coursePageId }],
           },
-          Module: {
-            rich_text: [{ type: "text", text: { content: moduleName } }],
+          "Module": {
+            rich_text: [
+              {
+                text: {
+                  content: moduleName,
+                },
+              },
+            ],
           },
-          Link: {
+          "Link": {
             url: item.html_url,
           },
           "Canvas Module Item ID": {
-            rich_text: [{ type: "text", text: { content: canvasId } }],
+            rich_text: [
+              {
+                text: {
+                  content: canvasId,
+                },
+              },
+            ],
           },
           "Last Synced": {
             date: { start: new Date().toISOString() },
