@@ -4,7 +4,6 @@ import cheerio from 'cheerio';
 
 const notion = new Client({ auth: process.env.NOTION_API_TOKEN });
 
-// Canvas API Config
 const canvasConfigs = [
   {
     token: process.env.CANVAS_1_API_TOKEN,
@@ -58,4 +57,105 @@ async function fetchAllPages(url, token) {
 
   while (nextUrl) {
     const res = await fetch(nextUrl, {
-      headers: {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    results = results.concat(data);
+    const linkHeader = res.headers.get("link");
+    const match = linkHeader && linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+    nextUrl = match ? match[1] : null;
+  }
+  return results;
+}
+
+async function findCoursePageId(courseName, dbId) {
+  const res = await notion.databases.query({
+    database_id: dbId,
+    filter: {
+      property: "Canvas Course Name",
+      rich_text: { equals: courseName },
+    },
+  });
+  return res.results.length ? res.results[0].id : null;
+}
+
+// ==============================
+// VERCEL HANDLER ENTRY POINT
+// ==============================
+export default async function handler(req, res) {
+  try {
+    console.log("🧠 Vercel sync triggered");
+    let totalCreated = 0;
+    let totalUpdated = 0;
+
+    const NOTION_DB_ID = process.env.NOTION_DB_ID;
+    const COURSE_PLANNER_DB = process.env.COURSE_PLANNER_DB;
+
+    for (const config of canvasConfigs) {
+      const courses = await fetchAllPages(`${config.baseUrl}/api/v1/courses`, config.token);
+      for (const course of courses) {
+        if (!course.name || !course.id || course.workflow_state !== "available") continue;
+
+        const coursePageId = await findCoursePageId(course.name, COURSE_PLANNER_DB);
+        if (!coursePageId) continue;
+
+        const assignments = await fetchAllPages(
+          `${config.baseUrl}/api/v1/courses/${course.id}/assignments?include[]=submission`,
+          config.token
+        );
+
+        for (const assignment of assignments) {
+          const notionQuery = await notion.databases.query({
+            database_id: NOTION_DB_ID,
+            filter: {
+              property: "Canvas Assignment ID",
+              rich_text: { equals: assignment.id.toString() },
+            },
+          });
+
+          const newDue = assignment.due_at ? { date: { start: assignment.due_at } } : undefined;
+          const newGrade = buildGradeString(assignment.submission, assignment);
+          const newStatus = detectSubmissionStatus(assignment);
+          const newClosed = detectClosedStatus(assignment);
+
+          if (notionQuery.results.length > 0) {
+            const page = notionQuery.results[0];
+            await notion.pages.update({
+              page_id: page.id,
+              properties: {
+                Due: newDue,
+                Grade: { rich_text: [{ text: { content: newGrade } }] },
+                "Submission Status": { multi_select: [{ name: newStatus }] },
+                Closed: { select: { name: newClosed } },
+                "Last Synced": { date: { start: new Date().toISOString() } },
+              },
+            });
+            totalUpdated++;
+          } else {
+            await notion.pages.create({
+              parent: { database_id: NOTION_DB_ID },
+              properties: {
+                Name: { title: [{ text: { content: assignment.name || "Untitled" } }] },
+                "Canvas Assignment ID": { rich_text: [{ text: { content: assignment.id.toString() } }] },
+                Due: newDue,
+                Grade: { rich_text: [{ text: { content: newGrade } }] },
+                "Submission Status": { multi_select: [{ name: newStatus }] },
+                Closed: { select: { name: newClosed } },
+                Course: { relation: [{ id: coursePageId }] },
+                "Auto-generated": { checkbox: true },
+                "Last Synced": { date: { start: new Date().toISOString() } },
+                "Plot Twist": { multi_select: [{ name: "✨ Just Landed" }] },
+              },
+            });
+            totalCreated++;
+          }
+        }
+      }
+    }
+
+    res.status(200).send(`✅ Synced ${totalCreated} new + ${totalUpdated} updated assignments`);
+  } catch (err) {
+    console.error("❌ Sync failed:", err.message);
+    res.status(500).send("❌ Sync failed");
+  }
+}
