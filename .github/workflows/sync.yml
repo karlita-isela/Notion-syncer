@@ -1,0 +1,14 @@
+name: Notion Assignment Sync
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 🕕 Runs daily at 6:00 AM UTC
+  workflow_dispatch:       # 🟢 Adds manual Run Workflow button
+
+jobs:
+  sync-job:
+    name: Run /api/sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger full assignment sync
+        run: curl -s https://notion-syncer.vercel.app/api/sync
