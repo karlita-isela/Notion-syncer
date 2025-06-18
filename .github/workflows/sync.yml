@@ -1,14 +1,37 @@
-name: Notion Assignment Sync
+name: Daily Sync to Notion
 
 on:
   schedule:
-    - cron: '0 6 * * *'   # 🕕 Runs daily at 6:00 AM UTC
-  workflow_dispatch:       # 🟢 Adds manual Run Workflow button
+    - cron: "0 8 * * *" # Every day at 8am UTC
+  workflow_dispatch:
 
 jobs:
-  sync-job:
-    name: Run /api/sync
+  run-sync:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Trigger full assignment sync
-        run: curl -s https://notion-syncer.vercel.app/api/sync
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run sync endpoint
+        run: curl -sS https://notion-syncer.vercel.app/api/sync || exit 1
+
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: ❌ Notion Sync Failed
+          body: "Your /api/sync endpoint failed. Check your logs!"
+          to: your@email.com
+          from: Notion Sync Bot <your@email.com>
