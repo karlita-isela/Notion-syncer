@@ -131,3 +131,10 @@ dist
 
 # Replit debugger
 .breakpoints
+
+# ⛔ Do not commit secrets to GitHub
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
