@@ -10,7 +10,7 @@ const TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
 const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-const COURSE_CODE = "MCELLBI X116"; // Hardcoded base prefix
+const COURSE_CODE = "MCELLBI X116"; // Use course prefix only
 
 async function fetchAllPages(url) {
   let results = [];
@@ -53,12 +53,13 @@ async function fetchContentText(item) {
   }
 }
 
+// ✅ FIXED: Match against the Notion TITLE field ("Name")
 async function findCoursePageId(courseCode) {
   const res = await notion.databases.query({
     database_id: COURSE_PLANNER_DB_ID,
     filter: {
-      property: "Canvas Course Name",
-      rich_text: {
+      property: "Name",
+      title: {
         starts_with: courseCode,
       },
     },
