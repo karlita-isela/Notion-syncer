@@ -10,7 +10,7 @@ const TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
 const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-const COURSE_CODE = "MCELLBI X116"; // Course name prefix in Notion
+const COURSE_CODE = "MCELLBI X116"; // Prefix to match Notion course
 
 async function fetchAllPages(url) {
   let results = [];
@@ -53,7 +53,6 @@ async function fetchContentText(item) {
   }
 }
 
-// ✅ Match Notion course page where "Name" (title) starts with COURSE_CODE
 async function findCoursePageId(courseCode) {
   const res = await notion.databases.query({
     database_id: COURSE_PLANNER_DB_ID,
@@ -69,7 +68,7 @@ async function findCoursePageId(courseCode) {
 
 export default async function handler(req, res) {
   try {
-    console.log("🔬 Syncing Cell Bio module content...");
+    console.log("🧬 Syncing Cell Bio module content...");
 
     const coursePageId = await findCoursePageId(COURSE_CODE);
     if (!coursePageId) throw new Error(`Course "${COURSE_CODE}" not found in Notion`);
@@ -92,7 +91,7 @@ export default async function handler(req, res) {
           });
 
           const props = {
-            Title: { title: [{ text: { content: item.title || "(Untitled Resource)" } }] },
+            Name: { title: [{ text: { content: item.title || "(Untitled Resource)" } }] },
             "Canvas Module Item ID": { rich_text: [{ text: { content: item.id.toString() } }] },
             Course: { relation: [{ id: coursePageId }] },
             Module: { rich_text: [{ text: { content: module.name || "(No Module)" } }] },
@@ -112,13 +111,13 @@ export default async function handler(req, res) {
               page_id: notionQuery.results[0].id,
               properties: props,
             });
-            console.log(`♻️ Updated "${item.title}"`);
+            console.log(`♻️ Updated: ${item.title}`);
           } else {
             await notion.pages.create({
               parent: { database_id: RESOURCE_DB_ID },
               properties: props,
             });
-            console.log(`✨ Created "${item.title}"`);
+            console.log(`✨ Created: ${item.title}`);
           }
 
           count++;
