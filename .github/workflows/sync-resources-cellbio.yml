@@ -1,0 +1,15 @@
+name: 🔬 Sync Cell Bio Resources
+
+on:
+  schedule:
+    - cron: "0 5 * * *"  # Every day at 5:00am UTC
+  workflow_dispatch:
+
+jobs:
+  sync-cellbio-resources:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⏳ Trigger Cell Bio Resources Sync
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" "${{ secrets.VERCEL_DEPLOYMENT_URL }}/api/sync-resources-cellbio"
