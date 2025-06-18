@@ -10,7 +10,7 @@ const TOKEN = process.env.CANVAS_2_API_TOKEN;
 const COURSE_PLANNER_DB_ID = process.env.COURSE_PLANNER_DB;
 const RESOURCE_DB_ID = process.env.NOTION_COURSE_RESOURCE_DB_ID;
 
-const COURSE_CODE = "MCELLBI X116"; // Match title prefix in Notion "Name" field
+const COURSE_CODE = "MCELLBI X116"; // Prefix match
 
 async function fetchAllPages(url) {
   let results = [];
@@ -96,24 +96,33 @@ export default async function handler(req, res) {
             Course: { relation: [{ id: coursePageId }] },
             Module: { rich_text: [{ text: { content: module.name || "(No Module)" } }] },
             Type: item.type ? { select: { name: item.type } } : undefined,
-            Link: item.external_url ? { url: item.external_url } : item.html_url ? { url: item.html_url } : undefined,
+            Link: item.external_url
+              ? { url: item.external_url }
+              : item.html_url
+              ? { url: item.html_url }
+              : undefined,
             Content: content ? { rich_text: [{ text: { content } }] } : undefined,
             "Last Synced": { date: { start: new Date().toISOString() } },
             "Auto-generated": { checkbox: true },
           };
 
           if (notionQuery.results.length > 0) {
-            await notion.pages.update({ page_id: notionQuery.results[0].id, properties: props });
+            await notion.pages.update({
+              page_id: notionQuery.results[0].id,
+              properties: props,
+            });
+            console.log(`♻️ Updated: ${item.title}`);
           } else {
             await notion.pages.create({
               parent: { database_id: RESOURCE_DB_ID },
               properties: props,
             });
+            console.log(`✨ Created: ${item.title}`);
           }
 
           count++;
         } catch (err) {
-          console.error(`❌ ${item.title || "Unnamed"}: ${err.message}`);
+          console.error(`❌ ${item.title}: ${err.message}`);
         }
       }
     }
