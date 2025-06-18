@@ -96,13 +96,19 @@ export default async function handler(req, res) {
       for (const course of courses) {
         if (!course.name || !course.id || course.workflow_state !== "available") continue;
 
+        console.log(`📘 Syncing course: ${course.name} (${course.id})`);
+
         const coursePageId = await findCoursePageId(course.name, COURSE_PLANNER_DB);
-        if (!coursePageId) continue;
+        if (!coursePageId) {
+          console.log(`⚠️ Skipping ${course.name} — Notion page not found`);
+          continue;
+        }
 
         const assignments = await fetchAllPages(
           `${config.baseUrl}/api/v1/courses/${course.id}/assignments?include[]=submission`,
           config.token
         );
+        console.log(`   ➤ Found ${assignments.length} assignments`);
 
         for (const assignment of assignments) {
           const notionQuery = await notion.databases.query({
@@ -130,6 +136,7 @@ export default async function handler(req, res) {
                 "Last Synced": { date: { start: new Date().toISOString() } },
               },
             });
+            console.log(`♻️ Updated: "${assignment.name}"`);
             totalUpdated++;
           } else {
             await notion.pages.create({
@@ -147,6 +154,7 @@ export default async function handler(req, res) {
                 "Plot Twist": { multi_select: [{ name: "✨ Just Landed" }] },
               },
             });
+            console.log(`✅ Created: "${assignment.name}"`);
             totalCreated++;
           }
         }
